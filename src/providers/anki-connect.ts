@@ -1,87 +1,101 @@
 import Formatter from "src/formatter";
-import { DeckTopic, Note, NotesProvider } from "src/note";
+import { Deck, Note } from "src/note";
 import Slugifier from "src/slugifier";
+import { DecksReceiver } from "src/synchronizer";
 
-export default class AnkiConnectProvider implements NotesProvider {
-	/**
-	 * Builds a new AnkiConnect provider instance.
-	 * @param _slugifier Used to normalize tags since Anki does not allow spaces
-	 */
+/**
+ * Synchronize decks with an AnkiConnect server.
+ */
+export default class AnkiConnectDecks implements DecksReceiver {
 	constructor(
 		private readonly _slugifier: Slugifier,
+		private readonly _formatter?: Formatter,
 		private readonly _baseUrl: string = "http://127.0.0.1:8765",
-		private readonly _formatter?: Formatter
+		private readonly _orphansDeckName: string = "obsidian-orphans"
 	) {}
 
-	async getNotes(): Promise<Note[]> {
-		throw new Error("Method not implemented.");
-	}
+	async sync(deck: Deck): Promise<void> {
+		await this.ensureDeckExist(deck);
+		const previousIds = await this.getExistingIds(deck.name);
 
-	async syncNotes(topic: DeckTopic, notes: Note[]): Promise<void> {
-		const existing = await this.removeOldNotes(topic, notes);
+		for (const note of deck.notes) {
+			if (note.id && !previousIds.includes(note.id)) {
+				await this.tryMoveNoteToDeck(note, deck.name);
+			}
 
-		if (!notes.length) return;
-
-		await this.getOrCreateDeck(topic.deck);
-
-		for (const note of notes) {
-			// Non-existent id, just recreate it
-			if (note.id && !existing.includes(note.id)) note.id = undefined;
-
-			await this.upsertNote(topic, note);
+			previousIds.remove(await this.upsert(note, deck.name));
 		}
+
+		await this.moveToOrphansDeck(previousIds);
 	}
 
-	async deleteNotesByTopics(topics: string[]): Promise<void> {
-		if (!topics.length) return;
-
-		const ids = await this.call<number[]>("findNotes", {
-			query: topics
-				.map((topic) => `tag:${this._slugifier.slugify(topic)}`)
-				.join(" or "),
-		});
-
-		await this.call("deleteNotes", {
-			notes: ids,
+	async finalize(): Promise<void> {
+		await this.call("deleteDecks", {
+			decks: [this._orphansDeckName],
+			cardsToo: true,
 		});
 	}
 
-	private async removeOldNotes(topic: DeckTopic, notes: Note[]) {
-		const ids = await this.call<number[]>("findNotes", {
-			query: `tag:${this._slugifier.slugify(topic.topic)}`,
-		});
-
-		await this.call("deleteNotes", {
-			notes: ids.filter((id) => !notes.find((note) => note.id === id)),
-		});
-
-		return ids;
-	}
-
-	private async getOrCreateDeck(name: string): Promise<number> {
+	private async ensureDeckExist(deck: Deck): Promise<void> {
 		const existingDecks = await this.call<Record<string, number>>(
 			"deckNamesAndIds"
 		);
 
-		if (existingDecks[name]) return existingDecks[name];
+		if (existingDecks[deck.name]) return;
 
-		const id = await this.call<number>("createDeck", {
-			deck: name,
+		// No note to create = no need to create the deck
+		if (!deck.notes.length) return;
+
+		await this.call("createDeck", {
+			deck: deck.name,
 		});
-
-		return id;
 	}
 
-	private async upsertNote(topic: DeckTopic, note: Note) {
+	private getExistingIds(deck: string): Promise<number[]> {
+		return this.call<number[]>("findNotes", {
+			query: `deck:"${deck}"`,
+		});
+	}
+
+	private async moveToOrphansDeck(ids: number[]): Promise<void> {
+		if (!ids.length) return;
+
+		await this.call("changeDeck", {
+			cards: ids,
+			deck: this._orphansDeckName,
+		});
+	}
+
+	private async tryMoveNoteToDeck(note: Note, deck: string) {
+		if (!note.id) return;
+
+		const [existing] = await this.call<object[]>("notesInfo", {
+			notes: [note.id],
+		});
+
+		if (Object.isEmpty(existing)) {
+			note.id = undefined;
+			return;
+		}
+
+		await this.call("changeDeck", {
+			cards: [note.id],
+			deck: deck,
+		});
+	}
+
+	private async upsert(note: Note, deck: string): Promise<number> {
 		const noteData = {
-			deckName: topic.deck,
+			deckName: deck,
 			modelName: "Basic",
 			fields: {
-				Front:
-					(await this._formatter?.format(note.front)) ?? note.front,
-				Back: (await this._formatter?.format(note.back)) ?? note.back,
+				Front: await this.format(note.front),
+				Back: await this.format(note.back),
 			},
-			tags: this._slugifier.slugify(note.tags.concat(topic.topic)),
+			options: {
+				allowDuplicate: true,
+			},
+			tags: this._slugifier.slugify(note.tags),
 		};
 
 		if (note.id) {
@@ -96,6 +110,14 @@ export default class AnkiConnectProvider implements NotesProvider {
 				note: noteData,
 			});
 		}
+
+		return note.id;
+	}
+
+	private async format(content: string): Promise<string> {
+		if (!this._formatter) return content;
+
+		return this._formatter.format(content);
 	}
 
 	private async call<TResult>(
@@ -120,7 +142,6 @@ export default class AnkiConnectProvider implements NotesProvider {
 		return result.result;
 	}
 }
-
 type ActionResult<T> = {
 	result: T;
 	error: null | string;

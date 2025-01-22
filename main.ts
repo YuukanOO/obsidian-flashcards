@@ -1,39 +1,38 @@
 import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
-import Exporter from "src/export";
 import MarkdownToHtmlFormatter from "src/formatters/markdown-html-formatter";
 import MarkdownParser from "src/parsers/markdown-parser";
-import AnkiConnectProvider from "src/providers/anki-connect";
-import ObsidianVaultProvider from "src/providers/obsidian-vault";
+import AnkiConnectDecks from "src/providers/anki-connect";
+import ObsidianVaultDecks from "src/providers/obsidian-vault";
 import CachedSlugifier from "src/slugifiers/cached-slugifier";
+import Synchronizer from "src/synchronizer";
 import { DEFAULT_SETTINGS, Settings } from "./settings";
 
 export default class AnkiPlugin extends Plugin {
 	settings: Settings;
-	exporter: Exporter;
+	private _synchronizer: Synchronizer;
 
 	async onload() {
 		await this.loadSettings();
 
-		this.exporter = new Exporter(
-			new ObsidianVaultProvider(
+		this._synchronizer = new Synchronizer(
+			new ObsidianVaultDecks(
 				this.app.vault,
 				new MarkdownParser(this.settings)
 			),
-			new AnkiConnectProvider(
+			new AnkiConnectDecks(
 				new CachedSlugifier(),
-				undefined,
 				new MarkdownToHtmlFormatter(this.app)
 			)
 		);
 
 		this.addCommand({
 			id: "yuukanoo-anki-export-questions",
-			name: "Export questions to Anki",
+			name: "Export notes to Anki",
 			callback: async () => {
-				const result = await this.exporter.run(this.settings.exported);
-
-				this.settings.exported = result;
-				await this.saveSettings();
+				this._synchronizer.run();
+				// const result = await this.exporter.run(this.settings.exported);
+				// this.settings.exported = result;
+				// await this.saveSettings();
 			},
 		});
 
