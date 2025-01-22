@@ -1,0 +1,52 @@
+@url = http://127.0.0.1:8765
+
+POST {{url}}
+Content-Type: application/json
+
+{
+    "action": "deckNamesAndIds",
+    "version": 6
+}
+
+###
+
+POST {{url}}
+Content-Type: application/json
+
+{
+   "action":"addNotes",
+   "version":6,
+   "params":{
+      "notes":[
+         {
+            "deckName":"College::PluginDev",
+            "modelName":"non_existent_model",
+            "fields":{
+               "Front":"front",
+               "Back":"bak"
+            }
+         },
+         {
+            "deckName":"College::PluginDev",
+            "modelName":"Basic",
+            "fields":{
+               "Front":"front",
+               "Back":"bak"
+            }
+         }
+      ]
+   }
+}
+
+###
+
+POST {{url}}
+Content-Type: application/json
+
+{
+    "action": "findNotes",
+    "version": 6,
+    "params": {
+        "query": "tag:csharp-pattern-matching or tag:python"
+    }
+}
