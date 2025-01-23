@@ -7,19 +7,6 @@ Export your obsidian notes to Anki.
 -   [Anki Desktop](https://apps.ankiweb.net/)
 -   [AnkiConnect](https://ankiweb.net/shared/info/2055492159)
 
-In Anki, configure AnkiConnect (Tools -> Addions -> AnkiConnect -> Configuration) with the following:
-
-```json
-{
-	"apiKey": null,
-	"apiLogPath": null,
-	"webBindAddress": "127.0.0.1",
-	"webBindPort": 8765,
-	"webCorsOrigin": "http://localhost",
-	"webCorsOriginList": ["http://localhost", "app://obsidian.md"]
-}
-```
-
 ## Expected format
 
 There's already a lot of Obsidian plugins to export your notes to Anki but I made this one to match my usage specifically.

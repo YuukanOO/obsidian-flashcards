@@ -7,15 +7,14 @@ export type ParseResult = {
 };
 
 /**
- * Function used to create a note from raw data.
+ * Function used to transform a note, extending it with custom data if needed.
  */
-export type NoteFactoryFunc = (
-	front: string,
-	back: string,
-	id?: number
-) => Note;
+export type NoteTransformerFunc = (note: Note) => Note;
 
 export interface NoteParser {
-	parse(content: string, factory?: NoteFactoryFunc): ParseResult | undefined;
+	parse(
+		content: string,
+		transformer?: NoteTransformerFunc
+	): ParseResult | undefined;
 	stringify(notes: Note[]): string;
 }

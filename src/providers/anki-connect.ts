@@ -1,20 +1,61 @@
 import Formatter from "src/formatter";
 import { Deck, Note } from "src/note";
 import Slugifier from "src/slugifier";
-import { DecksReceiver } from "src/synchronizer";
+import { DeckHeader, DecksReceiver, ProgressTracker } from "src/synchronizer";
+
+const DEFAULT_ANKI_CONNECT_VERSION = 6;
 
 /**
  * Synchronize decks with an AnkiConnect server.
+ *
+ * A Slugifier instance is mandatory to convert tags to their slug equivalent since
+ * Anki is pretty touchy about it.
  */
 export default class AnkiConnectDecks implements DecksReceiver {
+	private _version?: number;
+
 	constructor(
 		private readonly _slugifier: Slugifier,
 		private readonly _formatter?: Formatter,
-		private readonly _baseUrl: string = "http://127.0.0.1:8765",
+		private readonly _tracker?: ProgressTracker,
+		private readonly _baseUrl: string = "http://localhost:8765",
 		private readonly _orphansDeckName: string = "obsidian-orphans"
 	) {}
 
-	async sync(deck: Deck): Promise<void> {
+	async syncDecks(decks: DeckHeader[]): Promise<void> {
+		const start = new Date().getTime();
+		const count = decks.length;
+
+		try {
+			this._version = await this.requestPermissions();
+
+			let current = 0;
+
+			for (const deck of decks) {
+				await deck.open(async (d) => {
+					this._tracker?.progress(++current, count);
+
+					try {
+						await this.syncDeck(d);
+					} catch (e) {
+						this._tracker?.error(
+							new Error(
+								`Error processing deck ${d.name}: ${
+									e.message ?? e
+								}`
+							)
+						);
+					}
+				});
+			}
+
+			await this.deleteOrphansDeck();
+		} finally {
+			this._tracker?.ended(new Date().getTime() - start, count);
+		}
+	}
+
+	async syncDeck(deck: Deck): Promise<void> {
 		await this.ensureDeckExist(deck);
 		const previousIds = await this.getExistingIds(deck.name);
 
@@ -29,7 +70,33 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		await this.moveToOrphansDeck(previousIds);
 	}
 
-	async finalize(): Promise<void> {
+	private async requestPermissions(): Promise<number> {
+		// First try using no-cors to show the Anki popup.
+		try {
+			await this.call("requestPermission", undefined, "no-cors");
+		} catch {
+			throw new Error(
+				"Could not reach AnkiConnect, make sure Anki is running and AnkiConnect plugin is installed."
+			);
+		}
+
+		// And then check if the user has granted the application.
+		try {
+			const result = await this.call<PermissionResult>(
+				"requestPermission"
+			);
+
+			if (result.permission !== "granted") throw result.permission;
+
+			return result.version;
+		} catch {
+			throw new Error(
+				"AnkiConnect is not reachable, did you allow Obsidian to reach it?"
+			);
+		}
+	}
+
+	private async deleteOrphansDeck(): Promise<void> {
 		await this.call("deleteDecks", {
 			decks: [this._orphansDeckName],
 			cardsToo: true,
@@ -122,19 +189,26 @@ export default class AnkiConnectDecks implements DecksReceiver {
 
 	private async call<TResult>(
 		action: string,
-		params?: unknown
+		params?: unknown,
+		mode: RequestInit["mode"] = "cors"
 	): Promise<TResult> {
 		const result = (await fetch(this._baseUrl, {
 			headers: {
 				"Content-Type": "application/json",
 			},
 			method: "POST",
+			mode,
 			body: JSON.stringify({
 				action,
 				params,
-				version: 6,
+				version: this._version ?? DEFAULT_ANKI_CONNECT_VERSION,
 			}),
-		}).then((r) => r.json())) as ActionResult<TResult>;
+		}).then(async (r) => {
+			// When using no-cors, looks like the content is always empty, so just dismiss it.
+			if (mode === "no-cors") return { result: undefined, error: null };
+
+			return r.json();
+		})) as ActionResult<TResult>;
 
 		if (result.error)
 			throw new Error(result.error + "\n" + JSON.stringify(params));
@@ -142,7 +216,20 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		return result.result;
 	}
 }
+
 type ActionResult<T> = {
 	result: T;
 	error: null | string;
 };
+
+type PermissionResult =
+	| {
+			permission: "denied";
+			// eslint-disable-next-line no-mixed-spaces-and-tabs
+	  }
+	| {
+			permission: "granted";
+			requireApikey: boolean;
+			version: number;
+			// eslint-disable-next-line no-mixed-spaces-and-tabs
+	  };

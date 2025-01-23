@@ -10,7 +10,7 @@ function getBasename(file: TAbstractFile): string {
 
 const MARKDOWN_EXTENSION = "md";
 
-function isValidDeckHeader(file: TAbstractFile): boolean {
+function canBeUsedAsDeck(file: TAbstractFile): boolean {
 	if (file instanceof TFile) return file.extension === MARKDOWN_EXTENSION;
 	if (file instanceof TFolder) return true;
 
@@ -36,12 +36,10 @@ class ObsidianFile {
 
 	async extract(): Promise<Note[]> {
 		const content = await this._file.vault.cachedRead(this._file);
-		const parseResult = this._parser.parse(content, (front, back, id) => ({
-			id,
-			front,
-			back,
-			tags: this._tags,
-		}));
+		const parseResult = this._parser.parse(content, (note) => {
+			note.tags = this._tags;
+			return note;
+		});
 
 		this._matchedIndex = parseResult?.index;
 		this._notes = parseResult?.notes ?? [];
@@ -74,7 +72,7 @@ class ObsidianDeckHeader implements DeckHeader {
 	}
 
 	async open(callback: (deck: Deck) => Promise<void>): Promise<void> {
-		const files = this.collectFiles(this._root, []);
+		const files = this.collectFiles(this._root);
 		const notes: Note[] = [];
 
 		for (const file of files) {
@@ -92,7 +90,10 @@ class ObsidianDeckHeader implements DeckHeader {
 		}
 	}
 
-	private collectFiles(file: TAbstractFile, tags: string[]): ObsidianFile[] {
+	private collectFiles(
+		file: TAbstractFile,
+		tags: string[] = []
+	): ObsidianFile[] {
 		if (file instanceof TFile && file.extension === MARKDOWN_EXTENSION) {
 			return [
 				new ObsidianFile(
@@ -126,7 +127,7 @@ export default class ObsidianVaultDecks implements DecksEmitter {
 		const root = this._vault.getRoot();
 
 		return root.children
-			.filter(isValidDeckHeader)
+			.filter(canBeUsedAsDeck)
 			.map((f) => new ObsidianDeckHeader(this._parser, f, since));
 	}
 }

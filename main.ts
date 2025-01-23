@@ -1,15 +1,16 @@
-import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import MarkdownToHtmlFormatter from "src/formatters/markdown-html-formatter";
 import MarkdownParser from "src/parsers/markdown-parser";
 import AnkiConnectDecks from "src/providers/anki-connect";
 import ObsidianVaultDecks from "src/providers/obsidian-vault";
 import CachedSlugifier from "src/slugifiers/cached-slugifier";
-import Synchronizer from "src/synchronizer";
+import Synchronizer, { ProgressTracker } from "src/synchronizer";
 import { DEFAULT_SETTINGS, Settings } from "./settings";
 
-export default class AnkiPlugin extends Plugin {
+export default class AnkiPlugin extends Plugin implements ProgressTracker {
 	settings: Settings;
 	private _synchronizer: Synchronizer;
+	private _exportStatusBarEle: HTMLElement;
 
 	async onload() {
 		await this.loadSettings();
@@ -21,7 +22,8 @@ export default class AnkiPlugin extends Plugin {
 			),
 			new AnkiConnectDecks(
 				new CachedSlugifier(),
-				new MarkdownToHtmlFormatter(this.app)
+				new MarkdownToHtmlFormatter(this.app),
+				this
 			)
 		);
 
@@ -29,12 +31,15 @@ export default class AnkiPlugin extends Plugin {
 			id: "yuukanoo-anki-export-questions",
 			name: "Export notes to Anki",
 			callback: async () => {
-				this._synchronizer.run();
-				// const result = await this.exporter.run(this.settings.exported);
-				// this.settings.exported = result;
-				// await this.saveSettings();
+				try {
+					await this._synchronizer.run();
+				} catch (e) {
+					this.error(e);
+				}
 			},
 		});
+
+		this._exportStatusBarEle = this.addStatusBarItem();
 
 		// // This creates an icon in the left ribbon.
 		// const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
@@ -45,8 +50,7 @@ export default class AnkiPlugin extends Plugin {
 		// ribbonIconEl.addClass('my-plugin-ribbon-class');
 
 		// // This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		// const statusBarItemEl = this.addStatusBarItem();
-		// statusBarItemEl.setText('Status Bar Text');
+		//statusBarItemEl.setText("Status Bar Text");
 
 		// // This adds a simple command that can be triggered anywhere
 		// this.addCommand({
@@ -96,6 +100,21 @@ export default class AnkiPlugin extends Plugin {
 
 		// // When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+	}
+
+	ended(durationMs: number, decksCount: number): void {
+		this._exportStatusBarEle.setText("");
+		new Notice(`Synced ${decksCount} decks in ${durationMs}ms`);
+	}
+
+	error(err: Error): void {
+		new Notice(err.message);
+	}
+
+	progress(current: number, total: number): void {
+		this._exportStatusBarEle.setText(
+			`Exporting deck ${current}/${total}...`
+		);
 	}
 
 	onunload() {}

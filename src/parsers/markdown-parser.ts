@@ -1,13 +1,10 @@
 import { Note } from "src/note";
-import { NoteFactoryFunc, NoteParser, ParseResult } from "src/parser";
+import { NoteParser, NoteTransformerFunc, ParseResult } from "src/parser";
 
 export type MarkdownParserOptions = {
 	readonly notesSectionDelimiter: string;
 	readonly notesDelimiter: string;
 };
-
-const DEFAULT_NOTE_FACTORY_FUNC: NoteFactoryFunc = (front, back, id) =>
-	new Note(front, back, id);
 
 export default class MarkdownParser implements NoteParser {
 	private _idRegexp = /^<!--\s*id:(\d+)\s*-->/m;
@@ -24,7 +21,7 @@ export default class MarkdownParser implements NoteParser {
 
 	parse(
 		content: string,
-		factory: NoteFactoryFunc = DEFAULT_NOTE_FACTORY_FUNC
+		transformer?: NoteTransformerFunc
 	): ParseResult | undefined {
 		const match = this._notesSectionDelimiter.exec(content);
 
@@ -34,7 +31,7 @@ export default class MarkdownParser implements NoteParser {
 			index: match.index,
 			notes: this.parseNotes(
 				content.slice(match.index + match[0].length),
-				factory
+				transformer
 			),
 		};
 	}
@@ -63,7 +60,10 @@ ${note.back}
 `;
 	}
 
-	private parseNotes(content: string, factory: NoteFactoryFunc): Note[] {
+	private parseNotes(
+		content: string,
+		transformer?: NoteTransformerFunc
+	): Note[] {
 		const parts = content.split(this._notesDelimiter);
 		const notes: Note[] = [];
 
@@ -75,7 +75,9 @@ ${note.back}
 			const [front, id] = this.parseFront(parts[i]);
 			const back = parts[i + 1].trim();
 
-			notes.push(factory(front, back, id));
+			const note: Note = { front, back, id, tags: [] };
+
+			notes.push(transformer ? transformer(note) : note);
 		}
 
 		return notes;

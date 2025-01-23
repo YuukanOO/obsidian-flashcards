@@ -26,8 +26,13 @@ export interface DecksEmitter {
  * Represents an element which can receive decks and synchronize them.
  */
 export interface DecksReceiver {
-	sync(deck: Deck): Promise<void>;
-	finalize(): Promise<void>;
+	syncDecks(decks: DeckHeader[]): Promise<void>;
+}
+
+export interface ProgressTracker {
+	error(err: Error): void;
+	ended(durationMs: number, decksCount: number): void;
+	progress(current: number, total: number): void;
 }
 
 /**
@@ -43,27 +48,23 @@ export default class Synchronizer {
 
 	async run(previous?: UnixTimestamp) {
 		if (this._isRunning) {
-			throw new Error("Already running");
+			throw new Error(
+				"The exporter is already running, wait for it to complete."
+			);
 		}
 
 		this._isRunning = true;
 
 		try {
-			this.process(previous);
+			await this.process(previous);
 		} finally {
 			this._isRunning = false;
 		}
 	}
 
 	private async process(previous?: UnixTimestamp) {
-		const headers = await this._source.getDecks(previous);
+		const decks = await this._source.getDecks(previous);
 
-		for (const header of headers) {
-			await header.open(async (deck) => {
-				await this._destination.sync(deck);
-			});
-		}
-
-		await this._destination.finalize();
+		await this._destination.syncDecks(decks);
 	}
 }

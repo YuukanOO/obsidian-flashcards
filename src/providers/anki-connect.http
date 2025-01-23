@@ -10,6 +10,17 @@ Content-Type: application/json
 
 ###
 
+
+POST {{url}}
+Content-Type: application/json
+
+{
+    "action": "requestPermission",
+    "version": 6
+}
+
+###
+
 POST {{url}}
 Content-Type: application/json
 
