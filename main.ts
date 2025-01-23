@@ -5,10 +5,15 @@ import AnkiConnectDecks from "src/providers/anki-connect";
 import ObsidianVaultDecks from "src/providers/obsidian-vault";
 import CachedSlugifier from "src/slugifiers/cached-slugifier";
 import Synchronizer, { ProgressTracker, SyncResult } from "src/synchronizer";
+import { UnixTimestamp } from "src/time";
 import { DEFAULT_SETTINGS, Settings } from "./settings";
 
+type SavedData = {
+	lastExportedAt?: UnixTimestamp;
+};
+
 export default class AnkiPlugin extends Plugin implements ProgressTracker {
-	settings: Settings;
+	settings: Settings & SavedData;
 	private _synchronizer: Synchronizer;
 	private _exportStatusBarEle: HTMLElement;
 
@@ -27,17 +32,25 @@ export default class AnkiPlugin extends Plugin implements ProgressTracker {
 			)
 		);
 
+		// FIXME: partial updates of decks
+		// Can not do it yet because renaming files or folders does not mark it as modified.
 		this.addCommand({
 			id: "yuukanoo-anki-export-questions",
 			name: "Export notes to Anki",
-			callback: async () => {
-				try {
-					this.ended(await this._synchronizer.run());
-				} catch (e) {
-					this.ended(e);
-				}
-			},
+			callback: () => this.export(true),
 		});
+
+		// this.addCommand({
+		// 	id: "yuukanoo-anki-export-questions",
+		// 	name: "Export notes to Anki",
+		// 	callback: () => this.export(),
+		// });
+
+		// this.addCommand({
+		// 	id: "yuukanoo-anki-export-questions-force",
+		// 	name: "Export notes to Anki (force)",
+		// 	callback: () => this.export(true),
+		// });
 
 		this._exportStatusBarEle = this.addStatusBarItem();
 
@@ -102,9 +115,27 @@ export default class AnkiPlugin extends Plugin implements ProgressTracker {
 		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
-	ended(result: SyncResult): void;
-	ended(err: Error): void;
-	ended(result: SyncResult | Error): void {
+	private async export(force?: boolean) {
+		try {
+			const result = await this._synchronizer.run(
+				force ? undefined : this.settings.lastExportedAt
+			);
+
+			this.ended(result);
+			await this.saveExportDate(result.ended);
+		} catch (e) {
+			this.ended(e);
+		}
+	}
+
+	private async saveExportDate(date: UnixTimestamp) {
+		this.settings.lastExportedAt = date;
+		await this.saveSettings();
+	}
+
+	private ended(result: SyncResult): void;
+	private ended(err: Error): void;
+	private ended(result: SyncResult | Error): void {
 		this._exportStatusBarEle.setText("");
 
 		if (result instanceof Error) {

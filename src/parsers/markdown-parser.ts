@@ -68,11 +68,11 @@ ${note.back}
 		const notes: Note[] = [];
 
 		if (parts.length % 2 !== 0) {
-			return notes;
+			throw new Error("Could not parse notes, odd number found.");
 		}
 
 		for (let i = 0; i < parts.length; i += 2) {
-			const [front, id] = this.parseFront(parts[i]);
+			const [front, id] = this.splitContentAndId(parts[i]);
 			const back = parts[i + 1].trim();
 
 			const note: Note = { front, back, id, tags: [] };
@@ -83,7 +83,7 @@ ${note.back}
 		return notes;
 	}
 
-	private parseFront(content: string): [string, number | undefined] {
+	private splitContentAndId(content: string): [string, number | undefined] {
 		const match = this._idRegexp.exec(content);
 
 		if (!match) return [content.trim(), undefined];

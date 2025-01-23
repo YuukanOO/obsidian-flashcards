@@ -1,11 +1,11 @@
 {
-	"id": "yuukanoo-anki",
-	"name": "Anki exporter",
+	"id": "yuukanoo-flashcards",
+	"name": "Yuukan's Flashcard",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
 	"description": "Export notes to Anki for spaced repetition learning.",
 	"author": "Julien Leicher",
 	"authorUrl": "https://julien.leicher.me",
 	"fundingUrl": "https://github.com/sponsors/YuukanOO",
-	"isDesktopOnly": false
+	"isDesktopOnly": true
 }

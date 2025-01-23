@@ -47,9 +47,9 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		await this.deleteOrphansDeck();
 	}
 
-	async syncDeck(deck: Deck): Promise<void> {
+	private async syncDeck(deck: Deck): Promise<void> {
 		await this.ensureDeckExist(deck);
-		const previousIds = await this.getExistingIds(deck.name);
+		const previousIds = await this.getExistingIds(deck);
 
 		for (const note of deck.notes) {
 			if (note.id && !previousIds.includes(note.id)) {
@@ -100,19 +100,27 @@ export default class AnkiConnectDecks implements DecksReceiver {
 			"deckNamesAndIds"
 		);
 
-		if (existingDecks[deck.name]) return;
-
-		// No note to create = no need to create the deck
-		if (!deck.notes.length) return;
+		// Deck already exists or no notes to sync, just return
+		if (existingDecks[deck.name] || !deck.notes.length) return;
 
 		await this.call("createDeck", {
 			deck: deck.name,
 		});
 	}
 
-	private getExistingIds(deck: string): Promise<number[]> {
+	private getExistingIds(deck: Deck): Promise<number[]> {
+		let query = `deck:"${deck.name}"`;
+
+		if (deck.unchanged.length) {
+			query +=
+				" and " +
+				deck.unchanged
+					.map((s) => `-tag:${this.sourceToTag(s)}`)
+					.join(" and ");
+		}
+
 		return this.call<number[]>("findNotes", {
-			query: `deck:"${deck}"`,
+			query,
 		});
 	}
 
@@ -144,6 +152,10 @@ export default class AnkiConnectDecks implements DecksReceiver {
 	}
 
 	private async upsert(note: Note, deck: string): Promise<number> {
+		const tags = this._slugifier.slugify(note.tags);
+
+		if (note.source) tags.push(this.sourceToTag(note.source));
+
 		const noteData = {
 			deckName: deck,
 			modelName: "Basic",
@@ -154,7 +166,7 @@ export default class AnkiConnectDecks implements DecksReceiver {
 			options: {
 				allowDuplicate: true,
 			},
-			tags: this._slugifier.slugify(note.tags),
+			tags,
 		};
 
 		if (note.id) {
@@ -171,6 +183,10 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		}
 
 		return note.id;
+	}
+
+	private sourceToTag(source: string): string {
+		return `obsidian:${this._slugifier.slugify(source)}`;
 	}
 
 	private async format(content: string): Promise<string> {

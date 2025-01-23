@@ -38,28 +38,11 @@ POST {{url}}
 Content-Type: application/json
 
 {
-   "action":"addNotes",
-   "version":6,
-   "params":{
-      "notes":[
-         {
-            "deckName":"College::PluginDev",
-            "modelName":"non_existent_model",
-            "fields":{
-               "Front":"front",
-               "Back":"bak"
-            }
-         },
-         {
-            "deckName":"College::PluginDev",
-            "modelName":"Basic",
-            "fields":{
-               "Front":"front",
-               "Back":"bak"
-            }
-         }
-      ]
-   }
+    "action": "findNotes",
+    "version": 6,
+    "params": {
+        "query": "deck:\"Python\" and -tag:obsidian:python-collections-parcourir-une-collection"
+    }
 }
 
 ###
@@ -68,9 +51,10 @@ POST {{url}}
 Content-Type: application/json
 
 {
-    "action": "findNotes",
+    "action": "changeDeck",
     "version": 6,
     "params": {
-        "query": "tag:csharp-pattern-matching or tag:python"
+        "cards": [1737565130942],
+        "deck": "Tests"
     }
 }
