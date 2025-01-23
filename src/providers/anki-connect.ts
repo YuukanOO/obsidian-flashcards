@@ -23,36 +23,28 @@ export default class AnkiConnectDecks implements DecksReceiver {
 	) {}
 
 	async syncDecks(decks: DeckHeader[]): Promise<void> {
-		const start = new Date().getTime();
+		this._version = await this.requestPermissions();
+
 		const count = decks.length;
+		let current = 0;
 
-		try {
-			this._version = await this.requestPermissions();
+		for (const deck of decks) {
+			await deck.open(async (d) => {
+				this._tracker?.progress(++current, count);
 
-			let current = 0;
-
-			for (const deck of decks) {
-				await deck.open(async (d) => {
-					this._tracker?.progress(++current, count);
-
-					try {
-						await this.syncDeck(d);
-					} catch (e) {
-						this._tracker?.error(
-							new Error(
-								`Error processing deck ${d.name}: ${
-									e.message ?? e
-								}`
-							)
-						);
-					}
-				});
-			}
-
-			await this.deleteOrphansDeck();
-		} finally {
-			this._tracker?.ended(new Date().getTime() - start, count);
+				try {
+					await this.syncDeck(d);
+				} catch (e) {
+					this._tracker?.error(
+						new Error(
+							`Error processing deck ${d.name}: ${e.message ?? e}`
+						)
+					);
+				}
+			});
 		}
+
+		await this.deleteOrphansDeck();
 	}
 
 	async syncDeck(deck: Deck): Promise<void> {

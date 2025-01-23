@@ -4,7 +4,7 @@ import MarkdownParser from "src/parsers/markdown-parser";
 import AnkiConnectDecks from "src/providers/anki-connect";
 import ObsidianVaultDecks from "src/providers/obsidian-vault";
 import CachedSlugifier from "src/slugifiers/cached-slugifier";
-import Synchronizer, { ProgressTracker } from "src/synchronizer";
+import Synchronizer, { ProgressTracker, SyncResult } from "src/synchronizer";
 import { DEFAULT_SETTINGS, Settings } from "./settings";
 
 export default class AnkiPlugin extends Plugin implements ProgressTracker {
@@ -32,9 +32,9 @@ export default class AnkiPlugin extends Plugin implements ProgressTracker {
 			name: "Export notes to Anki",
 			callback: async () => {
 				try {
-					await this._synchronizer.run();
+					this.ended(await this._synchronizer.run());
 				} catch (e) {
-					this.error(e);
+					this.ended(e);
 				}
 			},
 		});
@@ -102,9 +102,17 @@ export default class AnkiPlugin extends Plugin implements ProgressTracker {
 		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
-	ended(durationMs: number, decksCount: number): void {
+	ended(result: SyncResult): void;
+	ended(err: Error): void;
+	ended(result: SyncResult | Error): void {
 		this._exportStatusBarEle.setText("");
-		new Notice(`Synced ${decksCount} decks in ${durationMs}ms`);
+
+		if (result instanceof Error) {
+			this.error(result);
+			return;
+		}
+
+		new Notice(`Synced ${result.decksCount} decks in ${result.duration}ms`);
 	}
 
 	error(err: Error): void {

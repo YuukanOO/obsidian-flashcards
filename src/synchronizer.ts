@@ -31,9 +31,17 @@ export interface DecksReceiver {
 
 export interface ProgressTracker {
 	error(err: Error): void;
-	ended(durationMs: number, decksCount: number): void;
 	progress(current: number, total: number): void;
 }
+
+export type SyncResult = {
+	started: UnixTimestamp;
+	ended: UnixTimestamp;
+	/** Duration of the sync process, in Milliseconds */
+	duration: number;
+	/** Number of decks synced */
+	decksCount: number;
+};
 
 /**
  * Synchronizes decks from a source to a destination.
@@ -46,7 +54,7 @@ export default class Synchronizer {
 		private readonly _destination: DecksReceiver
 	) {}
 
-	async run(previous?: UnixTimestamp) {
+	async run(previous?: UnixTimestamp): Promise<SyncResult> {
 		if (this._isRunning) {
 			throw new Error(
 				"The exporter is already running, wait for it to complete."
@@ -56,15 +64,25 @@ export default class Synchronizer {
 		this._isRunning = true;
 
 		try {
-			await this.process(previous);
+			return await this.process(previous);
 		} finally {
 			this._isRunning = false;
 		}
 	}
 
-	private async process(previous?: UnixTimestamp) {
+	private async process(previous?: UnixTimestamp): Promise<SyncResult> {
+		const started = new Date().getTime();
 		const decks = await this._source.getDecks(previous);
 
 		await this._destination.syncDecks(decks);
+
+		const ended = new Date().getTime();
+
+		return {
+			started,
+			ended,
+			duration: ended - started,
+			decksCount: decks.length,
+		};
 	}
 }
