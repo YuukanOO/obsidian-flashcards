@@ -13,7 +13,8 @@ const DEFAULT_ANKI_CONNECT_VERSION = 6;
  * Anki is pretty touchy about it.
  */
 export default class AnkiConnectDecks implements DecksReceiver {
-	private _version?: number;
+	private _version: number = DEFAULT_ANKI_CONNECT_VERSION;
+	private _existingDecks: Set<string> = new Set();
 
 	constructor(
 		private readonly _slugifier: Slugifier,
@@ -25,6 +26,7 @@ export default class AnkiConnectDecks implements DecksReceiver {
 
 	async syncDecks(decks: DeckHeader[]): Promise<void> {
 		this._version = await this.requestPermissions();
+		this._existingDecks = await this.getExistingDecks();
 
 		for (let i = 0; i < decks.length; i++) {
 			try {
@@ -49,9 +51,17 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		await this.deleteOrphansDeck();
 	}
 
+	private async getExistingDecks(): Promise<Set<string>> {
+		const existingDecks = await this.call<Record<string, number>>(
+			"deckNamesAndIds"
+		);
+
+		return new Set(Object.keys(existingDecks));
+	}
+
 	private async syncDeck(deck: Deck): Promise<void> {
 		await this.ensureDeckExist(deck);
-		const previousIds = await this.getExistingIds(deck);
+		const previousIds = await this.getExistingNoteIds(deck);
 
 		for (const note of deck.notes) {
 			if (note.id && !previousIds.includes(note.id)) {
@@ -98,19 +108,16 @@ export default class AnkiConnectDecks implements DecksReceiver {
 	}
 
 	private async ensureDeckExist(deck: Deck): Promise<void> {
-		const existingDecks = await this.call<Record<string, number>>(
-			"deckNamesAndIds"
-		);
-
-		// Deck already exists or no notes to sync, just return
-		if (existingDecks[deck.name] || !deck.notes.length) return;
+		if (this._existingDecks.has(deck.name) || !deck.notes.length) return;
 
 		await this.call("createDeck", {
 			deck: deck.name,
 		});
+
+		this._existingDecks.add(deck.name);
 	}
 
-	private getExistingIds(deck: Deck): Promise<number[]> {
+	private getExistingNoteIds(deck: Deck): Promise<number[]> {
 		let query = `deck:"${deck.name}"`;
 
 		if (deck.unchanged.length) {
@@ -211,7 +218,7 @@ export default class AnkiConnectDecks implements DecksReceiver {
 			body: JSON.stringify({
 				action,
 				params,
-				version: this._version ?? DEFAULT_ANKI_CONNECT_VERSION,
+				version: this._version,
 			}),
 		}).then(async (r) => {
 			// When using no-cors, looks like the content is always empty, so just dismiss it.

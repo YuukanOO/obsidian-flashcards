@@ -1,25 +1,16 @@
+import { createHash } from "crypto";
 import { TAbstractFile, TFile, TFolder, Vault } from "obsidian";
 import { Deck, Note } from "src/note";
 import NoteParser from "src/parser";
-import { DeckHeader, DecksEmitter } from "src/synchronizer";
+import {
+	DeckHeader,
+	DecksEmitter,
+	DecksResult,
+	SyncFingerprint,
+} from "src/synchronizer";
 import { UnixTimestamp } from "src/time";
 
-function getBasename(file: TAbstractFile): string {
-	return file instanceof TFile ? file.basename : file.name;
-}
-
 const MARKDOWN_EXTENSION = "md";
-
-function canBeUsedAsDeck(file: TAbstractFile): boolean {
-	if (file instanceof TFile) return file.extension === MARKDOWN_EXTENSION;
-	if (file instanceof TFolder) return true;
-
-	return false;
-}
-
-function getSourceName(file: TFile): string {
-	return file.path.slice(0, -(file.extension.length + 1));
-}
 
 /**
  * Read and write notes from/to an obsidian file.
@@ -142,11 +133,56 @@ export default class ObsidianVaultDecks implements DecksEmitter {
 		private readonly _parser: NoteParser
 	) {}
 
-	async getDecks(modifiedSince?: UnixTimestamp): Promise<DeckHeader[]> {
-		const root = this._vault.getRoot();
+	async getDecks(previous?: SyncFingerprint): Promise<DecksResult> {
+		const decks = this._vault.getRoot().children.filter(canBeUsedAsDeck);
+		const hash = hashFromTree(decks.map((d) => buildTree(d)));
+		const updatedSince = hash !== previous?.hash ? undefined : previous?.on;
 
-		return root.children
-			.filter(canBeUsedAsDeck)
-			.map((f) => new ObsidianDeckHeader(this._parser, f, modifiedSince));
+		return {
+			decks: decks.map(
+				(f) => new ObsidianDeckHeader(this._parser, f, updatedSince)
+			),
+			hash,
+		};
 	}
+}
+
+type NodeDirectory = [string, Node[]];
+type NodeFile = string;
+type Node = NodeFile | NodeDirectory;
+
+function buildTree(file: TAbstractFile): Node | undefined {
+	if (file instanceof TFile && file.extension === MARKDOWN_EXTENSION)
+		return file.name;
+
+	if (file instanceof TFolder)
+		return [
+			file.name,
+			file.children.reduce<Node[]>((r, c) => {
+				const result = buildTree(c);
+
+				if (result) r.push(result);
+
+				return r;
+			}, []),
+		];
+}
+
+function hashFromTree(tree: (Node | undefined)[]): string {
+	return createHash("md5").update(JSON.stringify(tree)).digest("hex");
+}
+
+function getBasename(file: TAbstractFile): string {
+	return file instanceof TFile ? file.basename : file.name;
+}
+
+function canBeUsedAsDeck(file: TAbstractFile): boolean {
+	if (file instanceof TFile) return file.extension === MARKDOWN_EXTENSION;
+	if (file instanceof TFolder) return true;
+
+	return false;
+}
+
+function getSourceName(file: TFile): string {
+	return file.path.slice(0, -(file.extension.length + 1));
 }

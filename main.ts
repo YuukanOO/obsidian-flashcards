@@ -6,8 +6,7 @@ import MarkdownParser from "src/parsers/markdown-parser";
 import AnkiConnectDecks from "src/providers/anki-connect";
 import ObsidianVaultDecks from "src/providers/obsidian-vault";
 import CachedSlugifier from "src/slugifiers/cached-slugifier";
-import Synchronizer, { SyncResult } from "src/synchronizer";
-import { UnixTimestamp } from "src/time";
+import Synchronizer, { SyncFingerprint, SyncResult } from "src/synchronizer";
 import SettingsTab, {
 	DEFAULT_SETTINGS,
 	Settings,
@@ -15,7 +14,7 @@ import SettingsTab, {
 } from "./settings";
 
 type SavedData = {
-	lastExportedAt?: UnixTimestamp;
+	fingerprint: SyncFingerprint;
 };
 
 export default class AnkiPlugin extends Plugin implements SettingsManager {
@@ -27,25 +26,17 @@ export default class AnkiPlugin extends Plugin implements SettingsManager {
 		await this.loadSettings();
 		this.prepareServices();
 
-		// FIXME: partial updates of decks
-		// Can not do it yet because renaming files or folders does not mark it as modified.
 		this.addCommand({
 			id: "yuukanoo-anki-export-questions",
 			name: "Export notes to Anki",
-			callback: () => this.export(true),
+			callback: () => this.export(),
 		});
 
-		// this.addCommand({
-		// 	id: "yuukanoo-anki-export-questions",
-		// 	name: "Export notes to Anki",
-		// 	callback: () => this.export(),
-		// });
-
-		// this.addCommand({
-		// 	id: "yuukanoo-anki-export-questions-force",
-		// 	name: "Export notes to Anki (force)",
-		// 	callback: () => this.export(true),
-		// });
+		this.addCommand({
+			id: "yuukanoo-anki-export-questions-force",
+			name: "Export notes to Anki (force)",
+			callback: () => this.export(true),
+		});
 
 		// // This creates an icon in the left ribbon.
 		// const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
@@ -111,19 +102,15 @@ export default class AnkiPlugin extends Plugin implements SettingsManager {
 	private async export(force?: boolean) {
 		try {
 			const result = await this._synchronizer.run(
-				force ? undefined : this._settings.lastExportedAt
+				force ? undefined : this._settings.fingerprint
 			);
 
 			this.ended(result);
-			await this.saveExportDate(result.ended);
+			this._settings.fingerprint = result.fingerprint;
+			await this.saveSettings();
 		} catch (e) {
 			this.ended(e);
 		}
-	}
-
-	private async saveExportDate(date: UnixTimestamp) {
-		this._settings.lastExportedAt = date;
-		await this.saveSettings();
 	}
 
 	private ended(result: SyncResult): void;

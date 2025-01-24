@@ -73,6 +73,7 @@ Some content about the subject.
 #cards
 
 <!-- id:1 -->
+
 A first question?
 
 ---
@@ -82,6 +83,7 @@ And a first answer!
 ---
 
 <!-- id:2 -->
+
 A second question?
 
 ---
@@ -92,4 +94,8 @@ And a second answer!
 ## Limitations
 
 -   Only support text content (Does not support embedded contents such as images, video and audio)
--   Does not support partial updates (to skip unmodified content) and speed the syncing process
+-   For now, if the vault tree has changed then a full sync will be forced. If you only update existing files, then it will only sync what have changed. I should find a better to detect file/folder renaming to make it better...
+
+## Known issues
+
+-   Sometimes the `changeDeck` is not working on specific notes so they will not be correctly deleted (since notes to remove are first moved to a temporary deck to handle switching notes between decks).

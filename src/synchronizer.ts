@@ -15,11 +15,16 @@ export interface DeckHeader {
 	open(callback: (deck: Deck) => Promise<void>): Promise<void>;
 }
 
+export type DecksResult = {
+	decks: DeckHeader[];
+	hash: string;
+};
+
 /**
  * Represents an element from which we can retrieve decks.
  */
 export interface DecksEmitter {
-	getDecks(since?: UnixTimestamp): Promise<DeckHeader[]>;
+	getDecks(previous?: SyncFingerprint): Promise<DecksResult>;
 }
 
 /**
@@ -29,13 +34,19 @@ export interface DecksReceiver {
 	syncDecks(decks: DeckHeader[]): Promise<void>;
 }
 
+/** Fingerprint used to enable partial deck updates. */
+export type SyncFingerprint = {
+	hash: string;
+	on: UnixTimestamp;
+};
+
 export type SyncResult = {
-	started: UnixTimestamp;
-	ended: UnixTimestamp;
 	/** Duration of the sync process, in Milliseconds */
 	duration: number;
 	/** Number of decks synced */
 	decksCount: number;
+	/** Fingerprint used to enable partial deck updates */
+	fingerprint: SyncFingerprint;
 };
 
 /**
@@ -49,7 +60,7 @@ export default class Synchronizer {
 		private readonly _destination: DecksReceiver
 	) {}
 
-	async run(previous?: UnixTimestamp): Promise<SyncResult> {
+	async run(previous?: SyncFingerprint): Promise<SyncResult> {
 		if (this._isRunning) {
 			throw new Error(
 				"The exporter is already running, wait for it to complete."
@@ -65,17 +76,17 @@ export default class Synchronizer {
 		}
 	}
 
-	private async process(previous?: UnixTimestamp): Promise<SyncResult> {
+	private async process(previous?: SyncFingerprint): Promise<SyncResult> {
 		const started = new Date().getTime();
-		const decks = await this._source.getDecks(previous);
+
+		const { decks, hash } = await this._source.getDecks(previous);
 
 		await this._destination.syncDecks(decks);
 
 		const ended = new Date().getTime();
 
 		return {
-			started,
-			ended,
+			fingerprint: { hash, on: ended },
 			duration: ended - started,
 			decksCount: decks.length,
 		};
