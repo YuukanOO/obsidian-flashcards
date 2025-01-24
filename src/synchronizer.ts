@@ -29,11 +29,6 @@ export interface DecksReceiver {
 	syncDecks(decks: DeckHeader[]): Promise<void>;
 }
 
-export interface ProgressTracker {
-	error(err: Error): void;
-	progress(current: number, total: number): void;
-}
-
 export type SyncResult = {
 	started: UnixTimestamp;
 	ended: UnixTimestamp;

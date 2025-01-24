@@ -1,5 +1,5 @@
 import { Note } from "src/note";
-import { NoteParser, NoteTransformerFunc, ParseResult } from "src/parser";
+import NoteParser, { NoteTransformerFunc, ParseResult } from "src/parser";
 
 export type MarkdownParserOptions = {
 	readonly notesSectionDelimiter: string;
@@ -67,9 +67,7 @@ ${note.back}
 		const parts = content.split(this._notesDelimiter);
 		const notes: Note[] = [];
 
-		if (parts.length % 2 !== 0) {
-			throw new Error("Could not parse notes, odd number found.");
-		}
+		if (parts.length % 2 !== 0) return notes;
 
 		for (let i = 0; i < parts.length; i += 2) {
 			const [front, id] = this.splitContentAndId(parts[i]);

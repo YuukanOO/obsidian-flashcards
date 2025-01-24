@@ -11,7 +11,7 @@ export type ParseResult = {
  */
 export type NoteTransformerFunc = (note: Note) => Note;
 
-export interface NoteParser {
+export default interface NoteParser {
 	parse(
 		content: string,
 		transformer?: NoteTransformerFunc

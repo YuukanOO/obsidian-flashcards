@@ -1,6 +1,6 @@
 import { TAbstractFile, TFile, TFolder, Vault } from "obsidian";
 import { Deck, Note } from "src/note";
-import { NoteParser } from "src/parser";
+import NoteParser from "src/parser";
 import { DeckHeader, DecksEmitter } from "src/synchronizer";
 import { UnixTimestamp } from "src/time";
 

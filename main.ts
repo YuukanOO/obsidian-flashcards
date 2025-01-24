@@ -1,36 +1,31 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { Plugin } from "obsidian";
 import MarkdownToHtmlFormatter from "src/formatters/markdown-html-formatter";
+import Logger from "src/logger";
+import ObsidianLogger from "src/loggers/obsidian-logger";
 import MarkdownParser from "src/parsers/markdown-parser";
 import AnkiConnectDecks from "src/providers/anki-connect";
 import ObsidianVaultDecks from "src/providers/obsidian-vault";
 import CachedSlugifier from "src/slugifiers/cached-slugifier";
-import Synchronizer, { ProgressTracker, SyncResult } from "src/synchronizer";
+import Synchronizer, { SyncResult } from "src/synchronizer";
 import { UnixTimestamp } from "src/time";
-import { DEFAULT_SETTINGS, Settings } from "./settings";
+import SettingsTab, {
+	DEFAULT_SETTINGS,
+	Settings,
+	SettingsManager,
+} from "./settings";
 
 type SavedData = {
 	lastExportedAt?: UnixTimestamp;
 };
 
-export default class AnkiPlugin extends Plugin implements ProgressTracker {
-	settings: Settings & SavedData;
+export default class AnkiPlugin extends Plugin implements SettingsManager {
+	private _settings: Settings & SavedData;
 	private _synchronizer: Synchronizer;
-	private _exportStatusBarEle: HTMLElement;
+	private _logger: Logger;
 
 	async onload() {
 		await this.loadSettings();
-
-		this._synchronizer = new Synchronizer(
-			new ObsidianVaultDecks(
-				this.app.vault,
-				new MarkdownParser(this.settings)
-			),
-			new AnkiConnectDecks(
-				new CachedSlugifier(),
-				new MarkdownToHtmlFormatter(this.app),
-				this
-			)
-		);
+		this.prepareServices();
 
 		// FIXME: partial updates of decks
 		// Can not do it yet because renaming files or folders does not mark it as modified.
@@ -51,8 +46,6 @@ export default class AnkiPlugin extends Plugin implements ProgressTracker {
 		// 	name: "Export notes to Anki (force)",
 		// 	callback: () => this.export(true),
 		// });
-
-		this._exportStatusBarEle = this.addStatusBarItem();
 
 		// // This creates an icon in the left ribbon.
 		// const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
@@ -103,7 +96,7 @@ export default class AnkiPlugin extends Plugin implements ProgressTracker {
 		// });
 
 		// // This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SettingsTab(this.app, this));
+		this.addSettingTab(new SettingsTab(this.app, this, this));
 
 		// // If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// // Using this function will automatically remove the event listener when this plugin is disabled.
@@ -118,7 +111,7 @@ export default class AnkiPlugin extends Plugin implements ProgressTracker {
 	private async export(force?: boolean) {
 		try {
 			const result = await this._synchronizer.run(
-				force ? undefined : this.settings.lastExportedAt
+				force ? undefined : this._settings.lastExportedAt
 			);
 
 			this.ended(result);
@@ -129,84 +122,62 @@ export default class AnkiPlugin extends Plugin implements ProgressTracker {
 	}
 
 	private async saveExportDate(date: UnixTimestamp) {
-		this.settings.lastExportedAt = date;
+		this._settings.lastExportedAt = date;
 		await this.saveSettings();
 	}
 
 	private ended(result: SyncResult): void;
 	private ended(err: Error): void;
 	private ended(result: SyncResult | Error): void {
-		this._exportStatusBarEle.setText("");
+		this._logger.status("");
 
 		if (result instanceof Error) {
-			this.error(result);
+			this._logger.error(result);
 			return;
 		}
 
-		new Notice(`Synced ${result.decksCount} decks in ${result.duration}ms`);
-	}
-
-	error(err: Error): void {
-		new Notice(err.message);
-	}
-
-	progress(current: number, total: number): void {
-		this._exportStatusBarEle.setText(
-			`Exporting deck ${current}/${total}...`
+		this._logger.info(
+			`Synced ${result.decksCount} decks in ${result.duration}ms`
 		);
 	}
 
 	onunload() {}
 
-	async loadSettings() {
-		this.settings = {
+	private prepareServices() {
+		this._logger = new ObsidianLogger(this.addStatusBarItem());
+		this._synchronizer = new Synchronizer(
+			new ObsidianVaultDecks(
+				this.app.vault,
+				new MarkdownParser(this._settings)
+			),
+			new AnkiConnectDecks(
+				new CachedSlugifier(),
+				new MarkdownToHtmlFormatter(this.app),
+				this._logger
+			)
+		);
+	}
+
+	private async loadSettings() {
+		this._settings = {
 			...DEFAULT_SETTINGS,
 			...(await this.loadData()),
 		};
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
-
-class SettingsTab extends PluginSettingTab {
-	plugin: AnkiPlugin;
-
-	constructor(app: App, plugin: AnkiPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
+	private async saveSettings() {
+		await this.saveData(this._settings);
 	}
 
-	display(): void {
-		const { containerEl } = this;
+	getSetting<TKey extends keyof Settings>(key: TKey): Settings[TKey] {
+		return this._settings[key];
+	}
 
-		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName("Notes section delimiter")
-			.setDesc("Delimiter representing the notes section")
-			.addTextArea((text) =>
-				text
-					.setPlaceholder(DEFAULT_SETTINGS.notesSectionDelimiter)
-					.setValue(this.plugin.settings.notesSectionDelimiter)
-					.onChange(async (value) => {
-						this.plugin.settings.notesSectionDelimiter = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Notes delimiter")
-			.setDesc("Delimiter to separate notes back and front")
-			.addTextArea((text) =>
-				text
-					.setPlaceholder(DEFAULT_SETTINGS.notesDelimiter)
-					.setValue(this.plugin.settings.notesDelimiter)
-					.onChange(async (value) => {
-						this.plugin.settings.notesDelimiter = value;
-						await this.plugin.saveSettings();
-					})
-			);
+	setSetting<TKey extends keyof Settings>(
+		key: TKey,
+		value: Settings[TKey]
+	): Promise<void> {
+		this._settings[key] = value;
+		return this.saveSettings();
 	}
 }

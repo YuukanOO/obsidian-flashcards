@@ -1,7 +1,8 @@
 import Formatter from "src/formatter";
+import Logger from "src/logger";
 import { Deck, Note } from "src/note";
 import Slugifier from "src/slugifier";
-import { DeckHeader, DecksReceiver, ProgressTracker } from "src/synchronizer";
+import { DeckHeader, DecksReceiver } from "src/synchronizer";
 
 const DEFAULT_ANKI_CONNECT_VERSION = 6;
 
@@ -17,7 +18,7 @@ export default class AnkiConnectDecks implements DecksReceiver {
 	constructor(
 		private readonly _slugifier: Slugifier,
 		private readonly _formatter?: Formatter,
-		private readonly _tracker?: ProgressTracker,
+		private readonly _logger?: Logger,
 		private readonly _baseUrl: string = "http://localhost:8765",
 		private readonly _orphansDeckName: string = "obsidian-orphans"
 	) {}
@@ -25,23 +26,24 @@ export default class AnkiConnectDecks implements DecksReceiver {
 	async syncDecks(decks: DeckHeader[]): Promise<void> {
 		this._version = await this.requestPermissions();
 
-		const count = decks.length;
-		let current = 0;
-
-		for (const deck of decks) {
-			await deck.open(async (d) => {
-				this._tracker?.progress(++current, count);
-
-				try {
-					await this.syncDeck(d);
-				} catch (e) {
-					this._tracker?.error(
-						new Error(
-							`Error processing deck ${d.name}: ${e.message ?? e}`
-						)
+		for (let i = 0; i < decks.length; i++) {
+			try {
+				await decks[i].open(async (d) => {
+					this._logger?.status(
+						`Exporting deck ${i + 1}/${decks.length}...`
 					);
-				}
-			});
+
+					await this.syncDeck(d);
+				});
+			} catch (e) {
+				this._logger?.error(
+					new Error(
+						`Error processing deck ${decks[i].name}: ${
+							e.message ?? e
+						}`
+					)
+				);
+			}
 		}
 
 		await this.deleteOrphansDeck();
