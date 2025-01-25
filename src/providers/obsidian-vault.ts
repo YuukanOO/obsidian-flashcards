@@ -1,12 +1,11 @@
-import { createHash } from "crypto";
 import { TAbstractFile, TFile, TFolder, Vault } from "obsidian";
 import { Deck, Note } from "src/note";
 import NoteParser from "src/parser";
 import {
 	DeckHeader,
+	DecksDiff,
 	DecksEmitter,
-	DecksResult,
-	SyncFingerprint,
+	SyncData,
 } from "src/synchronizer";
 import { UnixTimestamp } from "src/time";
 
@@ -21,16 +20,14 @@ const MARKDOWN_EXTENSION = "md";
  */
 class ObsidianFile {
 	private _notes: Note[] = [];
-	private _source: string;
 	private _matchedIndex?: number;
 
 	constructor(
 		private readonly _file: TFile,
 		private readonly _parser: NoteParser,
+		private readonly _source: string,
 		private readonly _tags: string[] = []
-	) {
-		this._source = getSourceName(this._file);
-	}
+	) {}
 
 	async extract(): Promise<Note[]> {
 		const content = await this._file.vault.cachedRead(this._file);
@@ -56,71 +53,89 @@ class ObsidianFile {
 	}
 }
 
-type FilesState = { unchanged: string[]; updated: ObsidianFile[] };
-
 /**
  * Represents a deck, extracted from root folders/files in an obsidian vault.
  */
 class ObsidianDeckHeader implements DeckHeader {
-	name: string;
+	private _removed: string[];
+	private readonly _updated: ObsidianFile[] = [];
+	public readonly unchanged: string[] = [];
+	public readonly sources: string[] = [];
 
-	constructor(
-		private readonly _parser: NoteParser,
-		private readonly _root: TAbstractFile,
-		private readonly _modifiedSince?: UnixTimestamp
-	) {
-		this.name = getBasename(this._root);
+	private constructor(public readonly name: string) {}
+
+	get hasBeenModified(): boolean {
+		return this._updated.length > 0 || this._removed.length > 0;
 	}
 
 	async open(callback: (deck: Deck) => Promise<void>): Promise<void> {
-		const state: FilesState = {
-			unchanged: [],
-			updated: [],
-		};
-
-		this.visit(state, this._root);
-
 		const notes: Note[] = [];
 
-		for (const file of state.updated) {
+		for (const file of this._updated) {
 			notes.push(...(await file.extract()));
 		}
 
 		await callback({
 			name: this.name,
-			unchanged: state.unchanged,
 			notes,
 		});
 
 		// Write back the file in case where note ids have been attributed
-		for (const file of state.updated) {
+		for (const file of this._updated) {
 			await file.write();
 		}
 	}
 
 	private visit(
-		state: FilesState,
+		parser: NoteParser,
 		file: TAbstractFile,
+		modifiedSince?: UnixTimestamp,
 		tags: string[] = []
 	): void {
 		if (file instanceof TFile && file.extension === MARKDOWN_EXTENSION) {
-			if (!this._modifiedSince || file.stat.mtime > this._modifiedSince) {
-				state.updated.push(
+			const source = getSourceName(file);
+
+			if (
+				!this._removed.includes(source) ||
+				!modifiedSince ||
+				file.stat.mtime > modifiedSince
+			) {
+				this._updated.push(
 					new ObsidianFile(
 						file,
-						this._parser,
+						parser,
+						source,
 						tags.concat(file.basename)
 					)
 				);
-			} else state.unchanged.push(getSourceName(file));
+			} else this.unchanged.push(source);
+
+			this.sources.push(source);
+			this._removed.remove(source);
 			return;
 		}
 
 		if (file instanceof TFolder) {
 			file.children.forEach((f) =>
-				this.visit(state, f, tags.concat(file.name))
+				this.visit(parser, f, modifiedSince, tags.concat(file.name))
 			);
 		}
+	}
+
+	public static create(
+		parser: NoteParser,
+		name: string,
+		file: TAbstractFile,
+		previousSources?: string[],
+		since?: UnixTimestamp
+	): ObsidianDeckHeader {
+		const header = new ObsidianDeckHeader(name);
+
+		// Consider every previous sources as being removed
+		header._removed = previousSources ? previousSources.slice() : [];
+		header.visit(parser, file, since);
+
+		return header;
 	}
 }
 
@@ -133,43 +148,33 @@ export default class ObsidianVaultDecks implements DecksEmitter {
 		private readonly _parser: NoteParser
 	) {}
 
-	async getDecks(previous?: SyncFingerprint): Promise<DecksResult> {
-		const decks = this._vault.getRoot().children.filter(canBeUsedAsDeck);
-		const hash = hashFromTree(decks.map((d) => buildTree(d)));
-		const updatedSince = hash !== previous?.hash ? undefined : previous?.on;
+	async getDecks(previous?: SyncData): Promise<DecksDiff> {
+		const diff: DecksDiff = { decks: [], fingerprint: {} };
 
-		return {
-			decks: decks.map(
-				(f) => new ObsidianDeckHeader(this._parser, f, updatedSince)
-			),
-			hash,
-		};
+		this._vault.getRoot().children.forEach((file) => {
+			if (!canBeUsedAsDeck(file)) return;
+
+			const deckName = getBasename(file);
+			// Consider unseen decks as modified
+			const since = previous?.decks[deckName] ? previous?.on : undefined;
+
+			const deck = ObsidianDeckHeader.create(
+				this._parser,
+				deckName,
+				file,
+				previous?.decks[deckName],
+				since
+			);
+
+			diff.fingerprint[deckName] = deck.sources;
+
+			if (!deck.hasBeenModified) return;
+
+			diff.decks.push(deck);
+		});
+
+		return diff;
 	}
-}
-
-type NodeDirectory = [string, Node[]];
-type NodeFile = string;
-type Node = NodeFile | NodeDirectory;
-
-function buildTree(file: TAbstractFile): Node | undefined {
-	if (file instanceof TFile && file.extension === MARKDOWN_EXTENSION)
-		return file.name;
-
-	if (file instanceof TFolder)
-		return [
-			file.name,
-			file.children.reduce<Node[]>((r, c) => {
-				const result = buildTree(c);
-
-				if (result) r.push(result);
-
-				return r;
-			}, []),
-		];
-}
-
-function hashFromTree(tree: (Node | undefined)[]): string {
-	return createHash("md5").update(JSON.stringify(tree)).digest("hex");
 }
 
 function getBasename(file: TAbstractFile): string {

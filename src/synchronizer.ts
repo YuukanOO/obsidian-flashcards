@@ -6,6 +6,11 @@ import { UnixTimestamp } from "src/time";
  */
 export interface DeckHeader {
 	readonly name: string;
+	/**
+	 * Contains the array of unchanged sources so that notes coming from them should not be processed.
+	 * Enables partial deck syncing.
+	 */
+	readonly unchanged: string[];
 
 	/**
 	 * Open the deck and retrieve associated notes.
@@ -15,38 +20,56 @@ export interface DeckHeader {
 	open(callback: (deck: Deck) => Promise<void>): Promise<void>;
 }
 
-export type DecksResult = {
-	decks: DeckHeader[];
-	hash: string;
+/**
+ * Keep the list of sources synced per deck.
+ */
+export type DecksFingerprint = { [deckName: string]: string[] };
+
+/**
+ * Represents what have changed since a previous sync.
+ */
+export type DecksDiff = {
+	/** List of modified decks */
+	readonly decks: DeckHeader[];
+	/** Current state of decks */
+	fingerprint: DecksFingerprint;
+};
+
+/**
+ * Contains stats about the sync process.
+ */
+export type SyncStats = {
+	readonly decks: number;
+	readonly notes: number;
 };
 
 /**
  * Represents an element from which we can retrieve decks.
  */
 export interface DecksEmitter {
-	getDecks(previous?: SyncFingerprint): Promise<DecksResult>;
+	getDecks(previous?: SyncData): Promise<DecksDiff>;
 }
 
 /**
  * Represents an element which can receive decks and synchronize them.
  */
 export interface DecksReceiver {
-	syncDecks(decks: DeckHeader[]): Promise<void>;
+	syncDecks(diff: DecksDiff): Promise<SyncStats>;
 }
 
-/** Fingerprint used to enable partial deck updates. */
-export type SyncFingerprint = {
-	hash: string;
+/**
+ * Sync data which could be persisted to prevent syncing everything every time.
+ */
+export type SyncData = {
+	decks: DecksFingerprint;
 	on: UnixTimestamp;
 };
 
 export type SyncResult = {
 	/** Duration of the sync process, in Milliseconds */
 	duration: number;
-	/** Number of decks synced */
-	decksCount: number;
-	/** Fingerprint used to enable partial deck updates */
-	fingerprint: SyncFingerprint;
+	stats: SyncStats;
+	state: SyncData;
 };
 
 /**
@@ -60,7 +83,7 @@ export default class Synchronizer {
 		private readonly _destination: DecksReceiver
 	) {}
 
-	async run(previous?: SyncFingerprint): Promise<SyncResult> {
+	async run(previous?: SyncData): Promise<SyncResult> {
 		if (this._isRunning) {
 			throw new Error(
 				"The exporter is already running, wait for it to complete."
@@ -76,19 +99,18 @@ export default class Synchronizer {
 		}
 	}
 
-	private async process(previous?: SyncFingerprint): Promise<SyncResult> {
+	private async process(previous?: SyncData): Promise<SyncResult> {
 		const started = new Date().getTime();
 
-		const { decks, hash } = await this._source.getDecks(previous);
-
-		await this._destination.syncDecks(decks);
+		const diff = await this._source.getDecks(previous);
+		const stats = await this._destination.syncDecks(diff);
 
 		const ended = new Date().getTime();
 
 		return {
-			fingerprint: { hash, on: ended },
+			state: { decks: diff.fingerprint, on: ended },
+			stats,
 			duration: ended - started,
-			decksCount: decks.length,
 		};
 	}
 }

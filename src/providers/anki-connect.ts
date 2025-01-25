@@ -2,7 +2,12 @@ import Formatter from "src/formatter";
 import Logger from "src/logger";
 import { Deck, Note } from "src/note";
 import Slugifier from "src/slugifier";
-import { DeckHeader, DecksReceiver } from "src/synchronizer";
+import {
+	DeckHeader,
+	DecksDiff,
+	DecksReceiver,
+	SyncStats,
+} from "src/synchronizer";
 
 const DEFAULT_ANKI_CONNECT_VERSION = 6;
 
@@ -24,23 +29,33 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		private readonly _orphansDeckName: string = "obsidian-orphans"
 	) {}
 
-	async syncDecks(decks: DeckHeader[]): Promise<void> {
+	async syncDecks(diff: DecksDiff): Promise<SyncStats> {
 		this._version = await this.requestPermissions();
 		this._existingDecks = await this.getExistingDecks();
 
-		for (let i = 0; i < decks.length; i++) {
-			try {
-				await decks[i].open(async (d) => {
-					this._logger?.status(
-						`Exporting deck ${i + 1}/${decks.length}...`
-					);
+		const stats = { decks: 0, notes: 0 };
 
-					await this.syncDeck(d);
+		for (let i = 0; i < diff.decks.length; i++) {
+			const header = diff.decks[i];
+
+			this._logger?.status(
+				`Exporting deck ${++stats.decks}/${diff.decks.length}...`
+			);
+
+			try {
+				await header.open(async (d) => {
+					await this.syncDeck(header, d);
+
+					stats.notes += d.notes.length;
 				});
 			} catch (e) {
+				// Something happen and the deck can't be processed, let's just pretend
+				// only unchanged source can be considered synced.
+				diff.fingerprint[header.name] = header.unchanged ?? [];
+
 				this._logger?.error(
 					new Error(
-						`Error processing deck ${decks[i].name}: ${
+						`Error processing deck ${header.name}: ${
 							e.message ?? e
 						}`
 					)
@@ -49,19 +64,13 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		}
 
 		await this.deleteOrphansDeck();
+
+		return stats;
 	}
 
-	private async getExistingDecks(): Promise<Set<string>> {
-		const existingDecks = await this.call<Record<string, number>>(
-			"deckNamesAndIds"
-		);
-
-		return new Set(Object.keys(existingDecks));
-	}
-
-	private async syncDeck(deck: Deck): Promise<void> {
+	private async syncDeck(header: DeckHeader, deck: Deck): Promise<void> {
 		await this.ensureDeckExist(deck);
-		const previousIds = await this.getExistingNoteIds(deck);
+		const previousIds = await this.getExistingNoteIds(header);
 
 		for (const note of deck.notes) {
 			if (note.id && !previousIds.includes(note.id)) {
@@ -72,6 +81,14 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		}
 
 		await this.moveToOrphansDeck(previousIds);
+	}
+
+	private async getExistingDecks(): Promise<Set<string>> {
+		const existingDecks = await this.call<Record<string, number>>(
+			"deckNamesAndIds"
+		);
+
+		return new Set(Object.keys(existingDecks));
 	}
 
 	private async requestPermissions(): Promise<number> {
@@ -117,13 +134,13 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		this._existingDecks.add(deck.name);
 	}
 
-	private getExistingNoteIds(deck: Deck): Promise<number[]> {
-		let query = `deck:"${deck.name}"`;
+	private getExistingNoteIds(header: DeckHeader): Promise<number[]> {
+		let query = `deck:"${header.name}"`;
 
-		if (deck.unchanged.length) {
+		if (header.unchanged.length) {
 			query +=
 				" and " +
-				deck.unchanged
+				header.unchanged
 					.map((s) => `-tag:${this.sourceToTag(s)}`)
 					.join(" and ");
 		}

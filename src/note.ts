@@ -14,10 +14,5 @@ export type Note = {
  */
 export type Deck = {
 	readonly name: string;
-	/**
-	 * Contains the array of unchanged sources so that notes coming from them should not be processed.
-	 * It enables partial deck updates.
-	 */
-	readonly unchanged: string[];
 	readonly notes: Note[];
 };

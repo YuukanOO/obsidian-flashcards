@@ -6,7 +6,7 @@ import MarkdownParser from "src/parsers/markdown-parser";
 import AnkiConnectDecks from "src/providers/anki-connect";
 import ObsidianVaultDecks from "src/providers/obsidian-vault";
 import CachedSlugifier from "src/slugifiers/cached-slugifier";
-import Synchronizer, { SyncFingerprint, SyncResult } from "src/synchronizer";
+import Synchronizer, { SyncData, SyncResult } from "src/synchronizer";
 import SettingsTab, {
 	DEFAULT_SETTINGS,
 	Settings,
@@ -14,7 +14,7 @@ import SettingsTab, {
 } from "./settings";
 
 type SavedData = {
-	fingerprint: SyncFingerprint;
+	lastExport: SyncData;
 };
 
 export default class AnkiPlugin extends Plugin implements SettingsManager {
@@ -102,11 +102,11 @@ export default class AnkiPlugin extends Plugin implements SettingsManager {
 	private async export(force?: boolean) {
 		try {
 			const result = await this._synchronizer.run(
-				force ? undefined : this._settings.fingerprint
+				force ? undefined : this._settings.lastExport
 			);
 
 			this.ended(result);
-			this._settings.fingerprint = result.fingerprint;
+			this._settings.lastExport = result.state;
 			await this.saveSettings();
 		} catch (e) {
 			this.ended(e);
@@ -124,7 +124,7 @@ export default class AnkiPlugin extends Plugin implements SettingsManager {
 		}
 
 		this._logger.info(
-			`Synced ${result.decksCount} decks in ${result.duration}ms`
+			`Synced ${result.stats.notes} notes across ${result.stats.decks} decks in ${result.duration}ms`
 		);
 	}
 

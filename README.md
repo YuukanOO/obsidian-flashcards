@@ -91,11 +91,13 @@ A second question?
 And a second answer!
 ```
 
+> [!NOTE]  
+> Decks are **never deleted** by this plugin. So if you remove a vault root file or folder, you'll have to manually delete the associated Anki deck.
+
 ## Limitations
 
 -   Only support text content (Does not support embedded contents such as images, video and audio)
--   For now, if the vault tree has changed then a full sync will be forced. If you only update existing files, then it will only sync what have changed. I should find a better to detect file/folder renaming to make it better...
 
 ## Known issues
 
--   Sometimes the `changeDeck` is not working on specific notes so they will not be correctly deleted (since notes to remove are first moved to a temporary deck to handle switching notes between decks).
+-   Sometimes the `changeDeck` is not working on specific notes so they will not be correctly deleted (since notes to remove are first moved to a temporary deck to handle switching notes between decks). Looks like it happens when Anki explorer is open.
