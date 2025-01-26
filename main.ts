@@ -6,7 +6,7 @@ import MarkdownParser from "src/parsers/markdown-parser";
 import AnkiConnectDecks from "src/providers/anki-connect";
 import ObsidianVaultDecks from "src/providers/obsidian-vault";
 import CachedSlugifier from "src/slugifiers/cached-slugifier";
-import Synchronizer, { SyncData, SyncResult } from "src/synchronizer";
+import Synchronizer, { DecksFingerprints, SyncResult } from "src/synchronizer";
 import SettingsTab, {
 	DEFAULT_SETTINGS,
 	Settings,
@@ -14,7 +14,7 @@ import SettingsTab, {
 } from "./settings";
 
 type SavedData = {
-	lastExport: SyncData;
+	lastExport?: DecksFingerprints;
 };
 
 export default class AnkiPlugin extends Plugin implements SettingsManager {

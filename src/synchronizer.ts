@@ -21,9 +21,14 @@ export interface DeckHeader {
 }
 
 /**
- * Keep the list of sources synced per deck.
+ * Keep the list of sources and the last seen time.
  */
-export type DecksFingerprint = { [deckName: string]: string[] };
+export type DeckFingerprint = {
+	on: UnixTimestamp;
+	sources: string[];
+};
+
+export type DecksFingerprints = { [deckName: string]: DeckFingerprint };
 
 /**
  * Represents what have changed since a previous sync.
@@ -32,7 +37,7 @@ export type DecksDiff = {
 	/** List of modified decks */
 	readonly decks: DeckHeader[];
 	/** Current state of decks */
-	fingerprint: DecksFingerprint;
+	fingerprints: DecksFingerprints;
 };
 
 /**
@@ -47,29 +52,21 @@ export type SyncStats = {
  * Represents an element from which we can retrieve decks.
  */
 export interface DecksEmitter {
-	getDecks(previous?: SyncData): Promise<DecksDiff>;
+	getDecks(previous?: DecksFingerprints): Promise<DecksDiff>;
 }
 
 /**
  * Represents an element which can receive decks and synchronize them.
  */
 export interface DecksReceiver {
-	syncDecks(diff: DecksDiff): Promise<SyncStats>;
+	syncDecks(decks: DeckHeader[]): Promise<SyncStats>;
 }
-
-/**
- * Sync data which could be persisted to prevent syncing everything every time.
- */
-export type SyncData = {
-	decks: DecksFingerprint;
-	on: UnixTimestamp;
-};
 
 export type SyncResult = {
 	/** Duration of the sync process, in Milliseconds */
 	duration: number;
 	stats: SyncStats;
-	state: SyncData;
+	state: DecksFingerprints;
 };
 
 /**
@@ -83,7 +80,7 @@ export default class Synchronizer {
 		private readonly _destination: DecksReceiver
 	) {}
 
-	async run(previous?: SyncData): Promise<SyncResult> {
+	async run(previous?: DecksFingerprints): Promise<SyncResult> {
 		if (this._isRunning) {
 			throw new Error(
 				"The exporter is already running, wait for it to complete."
@@ -99,16 +96,16 @@ export default class Synchronizer {
 		}
 	}
 
-	private async process(previous?: SyncData): Promise<SyncResult> {
+	private async process(previous?: DecksFingerprints): Promise<SyncResult> {
 		const started = new Date().getTime();
 
 		const diff = await this._source.getDecks(previous);
-		const stats = await this._destination.syncDecks(diff);
+		const stats = await this._destination.syncDecks(diff.decks);
 
 		const ended = new Date().getTime();
 
 		return {
-			state: { decks: diff.fingerprint, on: ended },
+			state: diff.fingerprints,
 			stats,
 			duration: ended - started,
 		};

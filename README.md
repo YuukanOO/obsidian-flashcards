@@ -99,5 +99,3 @@ And a second answer!
 -   Only support text content (Does not support embedded contents such as images, video and audio)
 
 ## Known issues
-
--   Sometimes the `changeDeck` is not working on specific notes so they will not be correctly deleted (since notes to remove are first moved to a temporary deck to handle switching notes between decks). Looks like it happens when Anki explorer is open.

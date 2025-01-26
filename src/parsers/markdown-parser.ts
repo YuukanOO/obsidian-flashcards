@@ -67,7 +67,12 @@ ${note.back}
 		const parts = content.split(this._notesDelimiter);
 		const notes: Note[] = [];
 
-		if (parts.length % 2 !== 0) return notes;
+		if (isEmpty(parts)) return notes;
+		if (isOdd(parts.length)) {
+			throw new Error(
+				"Could not parse notes, found odd numbers of front/back content pairs."
+			);
+		}
 
 		for (let i = 0; i < parts.length; i += 2) {
 			const [front, id] = this.splitContentAndId(parts[i]);
@@ -95,4 +100,12 @@ ${note.back}
 			parseInt(match[1]),
 		];
 	}
+}
+
+function isEmpty(matches: string[]): boolean {
+	return matches.filter((s) => s.trim() !== "").length === 0;
+}
+
+function isOdd(value: number): boolean {
+	return value % 2 !== 0;
 }

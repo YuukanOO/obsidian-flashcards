@@ -2,12 +2,7 @@ import Formatter from "src/formatter";
 import Logger from "src/logger";
 import { Deck, Note } from "src/note";
 import Slugifier from "src/slugifier";
-import {
-	DeckHeader,
-	DecksDiff,
-	DecksReceiver,
-	SyncStats,
-} from "src/synchronizer";
+import { DeckHeader, DecksReceiver, SyncStats } from "src/synchronizer";
 
 const DEFAULT_ANKI_CONNECT_VERSION = 6;
 
@@ -29,17 +24,17 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		private readonly _orphansDeckName: string = "obsidian-orphans"
 	) {}
 
-	async syncDecks(diff: DecksDiff): Promise<SyncStats> {
+	async syncDecks(decks: DeckHeader[]): Promise<SyncStats> {
 		this._version = await this.requestPermissions();
 		this._existingDecks = await this.getExistingDecks();
 
 		const stats = { decks: 0, notes: 0 };
 
-		for (let i = 0; i < diff.decks.length; i++) {
-			const header = diff.decks[i];
+		for (let i = 0; i < decks.length; i++) {
+			const header = decks[i];
 
 			this._logger?.status(
-				`Exporting deck ${++stats.decks}/${diff.decks.length}...`
+				`Exporting deck ${++stats.decks}/${decks.length}...`
 			);
 
 			try {
@@ -49,10 +44,6 @@ export default class AnkiConnectDecks implements DecksReceiver {
 					stats.notes += d.notes.length;
 				});
 			} catch (e) {
-				// Something happen and the deck can't be processed, let's just pretend
-				// only unchanged source can be considered synced.
-				diff.fingerprint[header.name] = header.unchanged ?? [];
-
 				this._logger?.error(
 					new Error(
 						`Error processing deck ${header.name}: ${
@@ -150,11 +141,15 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		});
 	}
 
-	private async moveToOrphansDeck(ids: number[]): Promise<void> {
-		if (!ids.length) return;
+	private async moveToOrphansDeck(noteIds: number[]): Promise<void> {
+		if (!noteIds.length) return;
+
+		const infos = await this.call<NoteInfo[]>("notesInfo", {
+			notes: noteIds,
+		});
 
 		await this.call("changeDeck", {
-			cards: ids,
+			cards: infos.flatMap((i) => i.cards),
 			deck: this._orphansDeckName,
 		});
 	}
@@ -162,7 +157,7 @@ export default class AnkiConnectDecks implements DecksReceiver {
 	private async tryMoveNoteToDeck(note: Note, deck: string) {
 		if (!note.id) return;
 
-		const [existing] = await this.call<object[]>("notesInfo", {
+		const [existing] = await this.call<NoteInfo[]>("notesInfo", {
 			notes: [note.id],
 		});
 
@@ -172,7 +167,7 @@ export default class AnkiConnectDecks implements DecksReceiver {
 		}
 
 		await this.call("changeDeck", {
-			cards: [note.id],
+			cards: existing.cards,
 			deck: deck,
 		});
 	}
@@ -267,3 +262,8 @@ type PermissionResult =
 			version: number;
 			// eslint-disable-next-line no-mixed-spaces-and-tabs
 	  };
+
+type NoteInfo = {
+	noteId: number;
+	cards: number[];
+};

@@ -54,7 +54,7 @@ Content-Type: application/json
     "action": "changeDeck",
     "version": 6,
     "params": {
-        "cards": [1737565130942],
+        "cards": [1737886653617],
         "deck": "Tests"
     }
 }
