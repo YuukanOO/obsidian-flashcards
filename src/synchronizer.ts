@@ -97,12 +97,12 @@ export default class Synchronizer {
 	}
 
 	private async process(previous?: DecksFingerprints): Promise<SyncResult> {
-		const started = new Date().getTime();
+		const started = Date.now();
 
 		const diff = await this._source.getDecks(previous);
 		const stats = await this._destination.syncDecks(diff.decks);
 
-		const ended = new Date().getTime();
+		const ended = Date.now();
 
 		return {
 			state: diff.fingerprints,

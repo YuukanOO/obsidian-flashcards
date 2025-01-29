@@ -101,7 +101,7 @@ class ObsidianDeckHeader implements DeckHeader {
 
 		// Files has been written, let's update the fingerprint date so any modification
 		// coming after this point will be processed next time.
-		this.fingerprint.on = new Date().getTime();
+		this.fingerprint.on = Date.now();
 	}
 
 	private visit(
